@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"encoding/json"
 	"regexp"
+	"log"
 )
 
 type mysqlDiff struct {
@@ -30,18 +31,28 @@ func main() {
 	checkErr(err)
 	//fmt.Println(config)
 	md.connDb(config)
-
 	md.contrastDd()
-
 	// 添加确实的表
 	md.addTable()
-
 	md.repairTable()
 
-	fmt.Printf("%v\n", md.addTables)
-	fmt.Printf("%v\n", md.repairTables)
+	fmt.Println("添加的表:")
+	var tableNameStr string
+	for _, tableName := range md.addTables {
+		tableNameStr = tableNameStr + " " + tableName
+	}
+	fmt.Println(tableNameStr)
+	fmt.Println("-------------------------")
 
-	//db, err := sql.Open("mysql", "root:123456@/go_test?charset=utf8")
+	fmt.Println("修复的表:")
+	for tableName, fieldSlice := range md.repairTables {
+		repairStr := tableName + ":"
+		for _, field := range fieldSlice {
+			repairStr = repairStr + " " + field
+		}
+		fmt.Println(repairStr)
+	}
+	fmt.Println("-------------------------")
 
 }
 
@@ -80,8 +91,12 @@ func (md *mysqlDiff) contrastDd() {
 
 func (md *mysqlDiff) fieldDiff(tableName string) ([]string) {
 	var data []string
-	master := readTableField(md.Conns["master"], tableName)
-	slave := readTableField(md.Conns["slave"], tableName)
+
+	master, err := readTableField(md.Conns["master"], tableName)
+	checkErr(err)
+
+	slave, err := readTableField(md.Conns["slave"], tableName)
+	checkErr(err)
 
 	for _, masterField := range master {
 		if !in_slice(masterField, slave) {
@@ -156,10 +171,13 @@ func readDatabaseTables(db *sql.DB) ([]string) {
 	return data
 }
 
-func readTableField(db *sql.DB, tableName string) ([]string) {
+func readTableField(db *sql.DB, tableName string) ([]string, error) {
 	var data []string
 	rowsMaster, err := db.Query("desc " + tableName)
-	checkErr(err)
+	if err != nil {
+		fmt.Printf("%v", err)
+		return nil, err
+	}
 
 	for rowsMaster.Next() {
 		var str string
@@ -167,13 +185,15 @@ func readTableField(db *sql.DB, tableName string) ([]string) {
 		rowsMaster.Scan(&str, &str1, &str1, &str1, &str1, &str1)
 		data = append(data, str)
 	}
-	return data
+	return data, nil
 }
 
 func readJsonFile(filename string) (map[string]DbConfig, error) {
 	var config = make(map[string]DbConfig)
 	bytes, err := ioutil.ReadFile(filename)
-	checkErr(err)
+	if err != nil {
+		return nil, err
+	}
 
 	err = json.Unmarshal(bytes, &config)
 	checkErr(err)
@@ -182,7 +202,6 @@ func readJsonFile(filename string) (map[string]DbConfig, error) {
 
 func checkErr(err error) {
 	if err != nil {
-		fmt.Printf("%v", err)
-		panic(err)
+		log.Fatal(err)
 	}
 }
